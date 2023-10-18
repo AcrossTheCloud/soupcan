@@ -822,6 +822,10 @@ function getIdentifier(localUrl) {
     identifier = identifier.substr(0, identifier.indexOf("/"));
   }
 
+  if (identifier.includes("?")) {
+    identifier = identifier.substr(0, identifier.indexOf("?"));
+  }
+
   return identifier.toLowerCase();
 }
 
@@ -859,6 +863,8 @@ function getLocalUrl(url) {
     "/compose/",
     "/following",
     "/followers",
+    "/followers_you_follow",
+    "/verified_followers",
     "/creator-subscriptions",
     "/explore/",
     "/i/",
@@ -869,6 +875,10 @@ function getLocalUrl(url) {
     "/help/",
     "/troubleshooting/",
     "/analytics",
+    "/topics",
+    "/lists",
+    "/hidden",
+    "/quotes",
     "/retweets"
   ]
 
@@ -1064,7 +1074,7 @@ function updatePage() {
       linkedDiv.classList.remove("wiawbe-linked");
     }
 
-    if (lastUpdatedUrl.endsWith("/followers")) {
+    if (lastUpdatedUrl.endsWith("/followers") || lastUpdatedUrl.endsWith("/followers_you_follow") || lastUpdatedUrl.endsWith("/verified_followers")) {
       doCountTerfs("followers");
     } else if (lastUpdatedUrl.endsWith("/following")) {
       doCountTerfs("following");
@@ -1356,7 +1366,7 @@ browser.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
         notifier.alert(browser.i18n.getMessage("userAlreadyRed", [identifier]));
         return false;
       } else {
-        var clonedTweetButton = document.querySelector("a[data-testid='SideNav_NewTweet_Button']").cloneNode(true);
+        var clonedTweetButton = document.querySelector("a[data-testid='SideNav_NewTweet_Button'], #navbar-tweet-button").cloneNode(true);
         var icon = clonedTweetButton.querySelector("div[dir='ltr'] svg");
         if (icon) {
           icon.remove();
@@ -1364,7 +1374,9 @@ browser.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
         clonedTweetButton.removeAttribute("href");
 
         for (const span of clonedTweetButton.querySelectorAll('span')) {
-          span.innerText = browser.i18n.getMessage("sendReportButton");
+          if (span.id !== "navbar-tweet-highlight") {
+            span.innerText = browser.i18n.getMessage("sendReportButton");
+          }
         }
 
         notifier.modal(
@@ -1372,8 +1384,8 @@ browser.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
           'modal-reason'
         );
         var popupElements = document.getElementsByClassName("awn-popup-modal-reason");
-        var bodyBackgroundColor = document.getElementsByTagName("body")[0].style["background-color"];
-        var textColor = window.getComputedStyle(document.querySelector("span"), null).getPropertyValue("color");
+        var bodyBackgroundColor = window.getComputedStyle(document.body, null).getPropertyValue("background-color");
+        var textColor = window.getComputedStyle(document.querySelector("[data-testid='tweetText'], .tweet-body-text"), null).getPropertyValue("color");
         if (popupElements) {
           for (let el of popupElements) {
             el.style["background-color"] = bodyBackgroundColor;
