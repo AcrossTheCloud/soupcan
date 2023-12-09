@@ -154,7 +154,7 @@ function applyOptions() {
 var content_match_cache = {};
 
 function getImageKey(url) {
-  return url.split('?')[0].replace("https://pbs.twimg.com/media/", "");
+  return url.split('?')[0];
 }
 
 var mediaMatching = false;
@@ -238,14 +238,11 @@ async function checkImage(imgEl, callback) {
     if (imgCacheKey in content_match_cache) {
       // already processed
       const cacheVal = content_match_cache[imgCacheKey];
-      if (cacheVal["imgHash"]) {
-        imageContainer.setAttribute("wiawbe-content-match", cacheVal["match-attribute"]);
-        imageContainer.setAttribute("wiawbe-content-match-note", cacheVal["note"]);
-        imgEl.setAttribute("data-soupcan-imghash", cacheVal["imgHash"]);
-        imgEl.setAttribute("data-soupcan-border-total", "none");
-        callback();
-        return;
-      }
+      imageContainer.setAttribute("wiawbe-content-match", cacheVal["match-attribute"]);
+      imageContainer.setAttribute("wiawbe-content-match-note", cacheVal["note"]);
+      imgEl.setAttribute("data-soupcan-border-total", "none");
+      callback();
+      return;
     }
 
     // check with pHash
@@ -640,14 +637,12 @@ function addReasonToUserNameDiv(div, identifier) {
       div.insertAdjacentHTML("beforeend", "<span id='wiawbe-profile-reason' class='wiawbe-reason'></span>");
       var profileReasonSpan = document.getElementById("wiawbe-profile-reason")
       profileReasonSpan.innerText = spanContents;
-      if (isModerator) {
-        var reasonAnchor = document.createElement("a");
-        reasonAnchor.href = "javascript:;"
-        reasonAnchor.addEventListener("click", () => getReasoning(identifier));
-        profileReasonSpan.innerText = "";
-        reasonAnchor.innerText = spanContents;
-        profileReasonSpan.appendChild(reasonAnchor);
-      }
+      var reasonAnchor = document.createElement("a");
+      reasonAnchor.href = "javascript:;"
+      reasonAnchor.addEventListener("click", () => getReasoning(identifier));
+      profileReasonSpan.innerText = "";
+      reasonAnchor.innerText = spanContents;
+      profileReasonSpan.appendChild(reasonAnchor);
     }
   }
 }
@@ -672,6 +667,13 @@ function waitForElm(selector) {
   });
 }
 
+function linkify(text) {
+  var urlRegex = /(\bhttps?:\/\/(twitter\.com|x\.com)\/[-A-Z0-9+&@#\/%?=~_|!:,.;]*[-A-Z0-9+&@#\/%=~_|])/ig;
+  return text.replace(urlRegex, function(url) {
+    return '<a href="' + url + '">' + url + '</a>';
+  });
+}
+
 function getReasoning(identifier) {
   var fetchUrl = "https://api.beth.lgbt/moderation/reasons?state=" + state + "&identifier=" + identifier;
 
@@ -692,7 +694,23 @@ function getReasoning(identifier) {
           localReasonsCache[identifier] = [jsonData, new Date()];
         }
 
-        var listEl = document.createElement("ol");
+        var reasonsTable = document.createElement("table");
+        reasonsTable.classList.add("reasons-table")
+        var reasonsHeader = document.createElement("thead");
+        var header1 = document.createElement("th");
+        header1.innerText = browser.i18n.getMessage("reasonHeaderWhen");
+        reasonsHeader.appendChild(header1);
+        var header2 = document.createElement("th");
+        header2.innerText = browser.i18n.getMessage("reasonHeaderReporter");
+        reasonsHeader.appendChild(header2);
+        var header3 = document.createElement("th");
+        header3.innerText = browser.i18n.getMessage("reasonHeaderReason");
+        reasonsHeader.appendChild(header3);
+
+        var reasonsBody = document.createElement("tbody")
+
+        reasonsTable.appendChild(reasonsHeader);
+        reasonsTable.appendChild(reasonsBody);
 
         var noReasonsSpan = document.createElement("span");
         noReasonsSpan.innerText = browser.i18n.getMessage("noReasons");
@@ -701,15 +719,33 @@ function getReasoning(identifier) {
           var when = new Date(report["report_time"] * 1000).toString().replace(/\ ..:.*/g, "").trim();
           var reason = report["reason"];
           
-          if (reason) {
-            reason = "because: " + reason;
-          } else {
-            reason = "with no reason provided";
+          if (!reason) {
+            reason = "(no reason provided)";
           }
 
-          var itemEl = document.createElement("li");
-          itemEl.innerText = when + ": " + report["reporter_screen_name"] + " reported " + reason;
-          listEl.appendChild(itemEl);
+          var rowEl = document.createElement("tr");
+
+          var timestampEl = document.createElement("td");
+          timestampEl.classList.add("nowrap");
+          var reporterEl = document.createElement("td");
+          var reasonEl = document.createElement("td");
+
+          timestampEl.innerText = when;
+          var reporter = report["reporter_screen_name"]
+          if (reporter == "redacted") {
+            reporterEl.innerText = reporter;
+          } else {
+            var reporterAnchor = document.createElement("a");
+            reporterAnchor.href = "https://twitter.com/" + report["reporter_screen_name"];
+            reporterAnchor.innerText = reporter;
+            reporterEl.appendChild(reporterAnchor);
+          }
+          reasonEl.innerHTML = linkify(reason);
+
+          rowEl.appendChild(timestampEl);
+          rowEl.appendChild(reporterEl);
+          rowEl.appendChild(reasonEl);
+          reasonsBody.appendChild(rowEl);
         }
 
         waitForElm("div[data-testid='DMDrawerHeader'] span").then((elm) => {
@@ -727,10 +763,13 @@ function getReasoning(identifier) {
             }
           }
 
-          if (listEl.childElementCount == 0) {
+          if (reasonsBody.childElementCount == 0) {
             document.getElementById("soupcan-reasons").appendChild(noReasonsSpan);
           } else {
-            document.getElementById("soupcan-reasons").appendChild(listEl);
+            var reasonsExplainer = document.createElement("p");
+            reasonsExplainer.innerText = browser.i18n.getMessage("reasonsExplanation");
+            document.getElementById("soupcan-reasons").appendChild(reasonsExplainer);
+            document.getElementById("soupcan-reasons").appendChild(reasonsTable);
           }
         });
       } catch (error) {
@@ -812,7 +851,7 @@ async function getDatabaseEntry(identifier) {
     }
   }
 
-  if (finalEntry["label"] == "appealed") {
+  if (finalEntry && finalEntry["label"] == "appealed") {
     return null;
   }
   
@@ -1481,68 +1520,61 @@ browser.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
   
       }
 
-      // see if they're already reported
-      const dbEntry = await getDatabaseEntry(identifier);
-      if (dbEntry && dbEntry["label"] && dbEntry["label"].startsWith("transphobe")) {
-        notifier.alert(browser.i18n.getMessage("userAlreadyRed", [identifier]));
-        return false;
-      } else {
-        var clonedTweetButton = document.querySelector("a[data-testid='SideNav_NewTweet_Button'], #navbar-tweet-button").cloneNode(true);
-        var icon = clonedTweetButton.querySelector("div[dir='ltr'] svg");
-        if (icon) {
-          icon.remove();
-        }
-        clonedTweetButton.removeAttribute("href");
-
-        for (const span of clonedTweetButton.querySelectorAll('span')) {
-          if (span.id !== "navbar-tweet-highlight") {
-            span.innerText = browser.i18n.getMessage("sendReportButton");
-          }
-        }
-
-        waitForElm("div[data-testid='DMDrawerHeader'] span").then((elm) => {
-          notifier.modal(
-            browser.i18n.getMessage("reportReasonInstructions", [identifier]) + "<textarea rows='8' cols='50' maxlength='1024' id='wiawbe-reason-textarea'></textarea>",
-            'modal-reason'
-          );
-          var popupElements = document.getElementsByClassName("awn-popup-modal-reason");
-          var bodyBackgroundColor = window.getComputedStyle(document.body, null).getPropertyValue("background-color");
-          var textColor = window.getComputedStyle(document.querySelector("div[data-testid='DMDrawerHeader'] span"), null).getPropertyValue("color");
-          if (popupElements) {
-            for (let el of popupElements) {
-              el.style["background-color"] = bodyBackgroundColor;
-              el.style["color"] = textColor;
-            }
-          }
-          var textArea = document.getElementById("wiawbe-reason-textarea");
-          if (textArea) {
-            textArea.style["backgroundColor"] = bodyBackgroundColor;
-            textArea.style["color"] = textColor;
-            textArea.style["border-color"] = textColor;
-            textArea.value = initialReason;
-            textArea.focus();
-          }
-          textArea.after(clonedTweetButton);
-
-          clonedTweetButton.addEventListener('click', async function() {
-            textArea.disabled = true;
-            var submitReason = textArea.value;
-            var awnPopupWrapper = document.getElementById("awn-popup-wrapper");
-            awnPopupWrapper.classList.add("awn-hiding");
-            setTimeout(() => awnPopupWrapper.remove(), 300);
-            
-            // Add locally
-            var localKey = await hash(identifier + ":" + database["salt"])
-            localEntries[localKey] = {"label": "local-transphobe", "reason": "Reported by you", "status": "pending", "submitReason": submitReason, "time": Date.now(), "identifier": identifier};
-
-            saveLocalEntries();
-            
-            updateAllLabels();
-            sendLabel("transphobe", identifier, sendResponse, localKey, submitReason);
-          },{once:true});
-          return true;
-        });
+      var clonedTweetButton = document.querySelector("a[data-testid='SideNav_NewTweet_Button'], #navbar-tweet-button").cloneNode(true);
+      var icon = clonedTweetButton.querySelector("div[dir='ltr'] svg");
+      if (icon) {
+        icon.remove();
       }
+      clonedTweetButton.removeAttribute("href");
+
+      for (const span of clonedTweetButton.querySelectorAll('span')) {
+        if (span.id !== "navbar-tweet-highlight") {
+          span.innerText = browser.i18n.getMessage("sendReportButton");
+        }
+      }
+
+      waitForElm("div[data-testid='DMDrawerHeader'] span").then((elm) => {
+        notifier.modal(
+          browser.i18n.getMessage("reportReasonInstructions", [identifier]) + "<textarea rows='8' cols='50' maxlength='1024' id='wiawbe-reason-textarea'></textarea>",
+          'modal-reason'
+        );
+        var popupElements = document.getElementsByClassName("awn-popup-modal-reason");
+        var bodyBackgroundColor = window.getComputedStyle(document.body, null).getPropertyValue("background-color");
+        var textColor = window.getComputedStyle(document.querySelector("div[data-testid='DMDrawerHeader'] span"), null).getPropertyValue("color");
+        if (popupElements) {
+          for (let el of popupElements) {
+            el.style["background-color"] = bodyBackgroundColor;
+            el.style["color"] = textColor;
+          }
+        }
+        var textArea = document.getElementById("wiawbe-reason-textarea");
+        if (textArea) {
+          textArea.style["backgroundColor"] = bodyBackgroundColor;
+          textArea.style["color"] = textColor;
+          textArea.style["border-color"] = textColor;
+          textArea.value = initialReason;
+          textArea.focus();
+        }
+        textArea.after(clonedTweetButton);
+
+        clonedTweetButton.addEventListener('click', async function() {
+          textArea.disabled = true;
+          var submitReason = textArea.value;
+          var awnPopupWrapper = document.getElementById("awn-popup-wrapper");
+          awnPopupWrapper.classList.add("awn-hiding");
+          setTimeout(() => awnPopupWrapper.remove(), 300);
+          
+          // Add locally
+          var localKey = await hash(identifier + ":" + database["salt"])
+          localEntries[localKey] = {"label": "local-transphobe", "reason": "Reported by you", "status": "pending", "submitReason": submitReason, "time": Date.now(), "identifier": identifier};
+
+          saveLocalEntries();
+          
+          updateAllLabels();
+          sendLabel("transphobe", identifier, sendResponse, localKey, submitReason);
+        },{once:true});
+        return true;
+      });
     } catch (error) {
       notifier.alert(browser.i18n.getMessage("genericError", [error]));
     }
